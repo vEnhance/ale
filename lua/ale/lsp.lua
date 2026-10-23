@@ -89,7 +89,8 @@ module.start = function(config)
                 vim.fn["ale#lsp_linter#HandleLSPDiagnostics"](
                     config.name,
                     request.params.textDocument.uri,
-                    diagnostics
+                    diagnostics,
+                    "pull"
                 )
             end
         end,

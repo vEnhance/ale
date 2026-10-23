@@ -410,6 +410,7 @@ describe("ale.lsp.start", function()
                         message = "Warning message",
                     },
                 },
+                "pull",
             },
         }, vim_fn_calls)
     end)
@@ -441,6 +442,7 @@ describe("ale.lsp.start", function()
                 "server:/code",
                 "file://code/foo.py",
                 "unchanged",
+                "pull",
             },
         }, vim_fn_calls)
     end)

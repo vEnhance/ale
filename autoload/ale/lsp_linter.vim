@@ -97,10 +97,39 @@ function! s:ShouldIgnoreDiagnostics(buffer, linter) abort
     return 0
 endfunction
 
+" Remember the latest loclist from a diagnostic source ('push' or 'pull') and
+" return the combined loclist for all sources, without duplicate items.
+"
+" Push and pull diagnostics are separate sources in the LSP specification,
+" so results from one source should not replace results from the other.
+function! s:CombineDiagnosticSources(info, linter_name, source, loclist) abort
+    let l:sources = get(a:info, 'lsp_diagnostic_sources', {})
+    let a:info.lsp_diagnostic_sources = l:sources
+    let l:linter_sources = get(l:sources, a:linter_name, {})
+    let l:sources[a:linter_name] = l:linter_sources
+    let l:linter_sources[a:source] = a:loclist
+
+    let l:combined = []
+
+    for l:source in ['push', 'pull']
+        for l:item in get(l:linter_sources, l:source, [])
+            if index(l:combined, l:item) < 0
+                call add(l:combined, l:item)
+            endif
+        endfor
+    endfor
+
+    return l:combined
+endfunction
+
 " Handle LSP diagnostics for a given URI.
 " The special value 'unchanged' can be used for diagnostics to indicate
 " that diagnostics haven't changed since we last checked.
-function! ale#lsp_linter#HandleLSPDiagnostics(conn_id, uri, diagnostics) abort
+"
+" The optional source argument is either 'push' (the default) for
+" textDocument/publishDiagnostics, or 'pull' for textDocument/diagnostic.
+function! ale#lsp_linter#HandleLSPDiagnostics(conn_id, uri, diagnostics, ...) abort
+    let l:source = get(a:000, 0, 'push')
     let l:linter = get(s:lsp_linter_map, a:conn_id)
 
     if empty(l:linter)
@@ -126,7 +155,12 @@ function! ale#lsp_linter#HandleLSPDiagnostics(conn_id, uri, diagnostics) abort
     if a:diagnostics is# 'unchanged'
         call ale#engine#MarkLinterInactive(l:info, l:linter)
     else
-        let l:loclist = ale#lsp#response#ReadDiagnostics(a:diagnostics)
+        let l:loclist = s:CombineDiagnosticSources(
+        \   l:info,
+        \   l:linter.name,
+        \   l:source,
+        \   ale#lsp#response#ReadDiagnostics(a:diagnostics),
+        \)
         call ale#engine#HandleLoclist(l:linter.name, l:buffer, l:loclist, 0)
     endif
 endfunction
@@ -301,7 +335,12 @@ function! ale#lsp_linter#HandleLSPResponse(conn_id, response) abort
             endif
         endif
 
-        call ale#lsp_linter#HandleLSPDiagnostics(a:conn_id, l:uri, l:diagnostics)
+        call ale#lsp_linter#HandleLSPDiagnostics(
+        \   a:conn_id,
+        \   l:uri,
+        \   l:diagnostics,
+        \   'pull',
+        \)
     elseif get(a:response, 'type', '') is# 'event'
     \&& get(a:response, 'event', '') is# 'semanticDiag'
         call s:HandleTSServerDiagnostics(a:response, 'semantic')

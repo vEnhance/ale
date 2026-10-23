@@ -537,6 +537,94 @@ Execute(LSP pull model diagnostic responses that are 'unchanged' should be handl
   \ g:ale_buffer_info[bufnr('')].loclist
   AssertEqual [], g:ale_buffer_info[bufnr('')].active_linter_list
 
+Execute(Empty push diagnostics should not clear pull model diagnostics):
+  call ale#test#SetFilename('filename.md')
+  call ale#engine#InitBufferInfo(bufnr(''))
+  call ale#lsp_linter#SetLSPLinterMap({'1': {'name': 'rumdl', 'aliases': [], 'lsp': 'stdio'}})
+  call ale#lsp_linter#SetDiagnosticURIMap({'347': ale#util#ToURI(expand('%:p'))})
+
+  let g:diagnostic = {
+  \ 'range': {
+  \   'start': {'line': 0, 'character': 0},
+  \   'end': {'line': 0, 'character': 0},
+  \ },
+  \ 'severity': 2,
+  \ 'message': 'Trailing spaces',
+  \}
+
+  call ale#lsp_linter#HandleLSPResponse(1, {
+  \ 'jsonrpc': '2.0',
+  \ 'id': 347,
+  \ 'result': {'kind': 'full', 'items': [g:diagnostic]},
+  \})
+  " Some servers publish empty diagnostics to tell pull model clients to pull
+  " again, such as rumdl after a file is saved.
+  call ale#lsp_linter#HandleLSPResponse(1, {
+  \ 'jsonrpc': '2.0',
+  \ 'method': 'textDocument/publishDiagnostics',
+  \ 'params': {'uri': ale#util#ToURI(expand('%:p')), 'diagnostics': []},
+  \})
+
+  AssertEqual
+  \ ['Trailing spaces'],
+  \ map(ale#test#GetLoclistWithoutNewerKeys(), 'v:val.text')
+
+  " Empty pull diagnostics should still clear the problems.
+  call ale#lsp_linter#SetDiagnosticURIMap({'348': ale#util#ToURI(expand('%:p'))})
+  call ale#lsp_linter#HandleLSPResponse(1, {
+  \ 'jsonrpc': '2.0',
+  \ 'id': 348,
+  \ 'result': {'kind': 'full', 'items': []},
+  \})
+
+  AssertEqual [], ale#test#GetLoclistWithoutNewerKeys()
+
+  unlet! g:diagnostic
+
+Execute(The same push and pull model diagnostics should not be duplicated):
+  call ale#test#SetFilename('filename.md')
+  call ale#engine#InitBufferInfo(bufnr(''))
+  call ale#lsp_linter#SetLSPLinterMap({'1': {'name': 'rumdl', 'aliases': [], 'lsp': 'stdio'}})
+  call ale#lsp_linter#SetDiagnosticURIMap({'347': ale#util#ToURI(expand('%:p'))})
+
+  let g:diagnostic = {
+  \ 'range': {
+  \   'start': {'line': 0, 'character': 0},
+  \   'end': {'line': 0, 'character': 0},
+  \ },
+  \ 'severity': 2,
+  \ 'message': 'Trailing spaces',
+  \}
+  let g:other_diagnostic = {
+  \ 'range': {
+  \   'start': {'line': 0, 'character': 2},
+  \   'end': {'line': 0, 'character': 2},
+  \ },
+  \ 'severity': 1,
+  \ 'message': 'Pushed only',
+  \}
+
+  call ale#lsp_linter#HandleLSPResponse(1, {
+  \ 'jsonrpc': '2.0',
+  \ 'method': 'textDocument/publishDiagnostics',
+  \ 'params': {
+  \   'uri': ale#util#ToURI(expand('%:p')),
+  \   'diagnostics': [g:diagnostic, g:other_diagnostic],
+  \ },
+  \})
+  call ale#lsp_linter#HandleLSPResponse(1, {
+  \ 'jsonrpc': '2.0',
+  \ 'id': 347,
+  \ 'result': {'kind': 'full', 'items': [g:diagnostic]},
+  \})
+
+  AssertEqual
+  \ ['Trailing spaces', 'Pushed only'],
+  \ map(ale#test#GetLoclistWithoutNewerKeys(), 'v:val.text')
+
+  unlet! g:diagnostic
+  unlet! g:other_diagnostic
+
 Execute(LSP pull model diagnostic errors should clear pending requests):
   let b:ale_linters = ['eclipselsp']
   runtime ale_linters/java/eclipselsp.vim
